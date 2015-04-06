@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Threading.Tasks;
 using System.Net.Http;
 using System.Xml.Linq;
@@ -12,9 +13,7 @@ namespace uPackageResolver
 {
     internal class Program
     {
-        public static string Host { get; set; }
-
-        private static string _basePath = Environment.CurrentDirectory;
+        private static readonly string _basePath = Environment.CurrentDirectory;
         private const string _appDataFolder = @"\App_Data\";
 
         private static void Main(string[] args)
@@ -25,17 +24,11 @@ namespace uPackageResolver
                 return;
             }
 
-            try
-            {
-                DownloadPackages(options.Host, options.UserName, options.Password);
-            }
-            catch (Exception e)
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine(e.InnerException);
-                Console.ForegroundColor = ConsoleColor.White;
-            }
-            
+
+            RestorePackages(options.Host, options.UserName, options.Password);
+            //RestorePackages("", "", "");
+            while (true) ;
+
         }
 
         private static Args SetupArguments(string[] args)
@@ -44,7 +37,7 @@ namespace uPackageResolver
             parser.Setup(x => x.Host).As('h').Required().WithDescription("Host name of your site. Requaired");
             parser.Setup(x => x.UserName).As('u').Required().WithDescription("Umbraco`s user name. Requaired");
             parser.Setup(x => x.UserName).As('p').Required().WithDescription("Umraco`s password.  Requaired");
-            parser.SetupHelp("?").WithHeader("Example: uresolver -h site.com -u admin -p password").Callback( text => Console.WriteLine(text));
+            parser.SetupHelp("?").WithHeader("Example: uresolver -h site.com -u admin -p password").Callback(text => Console.WriteLine(text));
 
             var options = parser.Parse(args);
             if (options.HasErrors)
@@ -57,47 +50,99 @@ namespace uPackageResolver
             return result;
         }
 
-        private static async void DownloadPackages(string host, string userName, string password)
+        private static async Task<HttpResponseMessage> Login(string host, string userName, string password, HttpClient client)
         {
-            using (var client = new HttpClient())
-            {
-                var authParams = new Dictionary<string, string>
+            return new HttpResponseMessage( HttpStatusCode.OK);
+            var authParams = new Dictionary<string, string>
                 {
                     {"password", password},
                     {"username", userName}
                 };
 
-                if (!host.StartsWith("http://"))
-                {
-                    host = "http://" + host;
-                }
-                var authUrl = string.Format("{0}/umbraco/backoffice/UmbracoApi/Authentication/PostLogin", host);
+            var authUrl = string.Format("{0}/umbraco/backoffice/UmbracoApi/Authentication/PostLogin", host);
+            var response = await client.PostAsync(authUrl, new FormUrlEncodedContent(authParams));
+            if (response.StatusCode.Equals(HttpStatusCode.BadRequest))
+            {
+                throw new HttpRequestException("Cannot login to Umbaco. Recheck credentials.");
+            }
+            return response;
+        }
 
-                await Post(client, authUrl, new FormUrlEncodedContent(authParams));
-
-                foreach (var packageModel in GetPackages())
-                {
-                    // download package
-                    var packagePath = Path.Combine(_basePath + _appDataFolder, packageModel.PackageGuid);
-                    var packageParams = new Dictionary<string, string>
+        private static async Task<HttpResponseMessage> DownloadPackage(string host, PackageModel packageModel, HttpClient client)
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK);
+            var packagePath = Path.Combine(_basePath + _appDataFolder, packageModel.PackageGuid);
+            var packageParams = new Dictionary<string, string>
                     {
                         {"body_tempFile", packagePath },
                     };
-                    var downloadPackageUrl = string.Format("{2}/umbraco/developer/packages/installer.aspx?repoGuid={0}&guid={1}", packageModel.RepoGuid, packageModel.PackageGuid, host);
-                    await Post(client, downloadPackageUrl, new FormUrlEncodedContent(packageParams));
+            var downloadPackageUrl = string.Format("{2}/umbraco/developer/packages/installer.aspx?repoGuid={0}&guid={1}", packageModel.RepoGuid, packageModel.PackageGuid, host);
+            var response = await client.PostAsync(downloadPackageUrl, new FormUrlEncodedContent(packageParams));
+            return response;
+        }
 
-                    // copy files to final destinations
-                    foreach (var file in GetFiles(packageModel.PackageGuid))
+        private static async void RestorePackages(string host, string userName, string password)
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+
+                    if (!host.StartsWith("http://"))
                     {
-                        var soursePath = Path.Combine(_basePath + _appDataFolder, packageModel.PackageGuid, file.FileGuid);
-                        PlaceFileToPackageDirectory(soursePath, file);
+                        host = "http://" + host;
+                    }
+
+                    Console.WriteLine("Trying to log in");
+                    var loginResp = await Login(host, userName, password, client);
+                    Console.WriteLine("Respons.StatusCode: " + loginResp.StatusCode);
+                    Console.WriteLine("Loged in");
+
+                    foreach (var packageModel in GetPackages())
+                    {
+                        // download package
+                        var model = packageModel;
+                        await DownloadPackage(host, packageModel, client).ContinueWith(async (task) =>
+                        {
+                            try
+                            {
+                                Console.WriteLine("Trying to download package " + model.PackageGuid);
+                                var downloadResul = await task;
+                                Console.WriteLine("Respons.StatusCode: " + downloadResul.StatusCode);
+                                Console.WriteLine("Downloaded");
+
+                                // copy files to final destinations
+                                foreach (var file in GetFiles(model.PackageGuid))
+                                {
+                                    var soursePath = Path.Combine(_basePath + _appDataFolder, model.PackageGuid, file.FileGuid);
+                                    PlaceFileToPackageDirectory(soursePath, file);
+                                }
+                            }
+                            catch (Exception e)
+                            {
+                                HandleError(e);
+                            }
+                        });
                     }
                 }
             }
+            catch (Exception e)
+            {
+                HandleError(e);
+            }
         }
 
-        private static void PlaceFileToPackageDirectory(string soursePath,FileModel file)
+        private static void HandleError(Exception exception)
         {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine(exception.Message);
+            Console.WriteLine(exception.InnerException);
+            Console.ForegroundColor = ConsoleColor.White;
+        }
+
+        private static void PlaceFileToPackageDirectory(string soursePath, FileModel file)
+        {
+            return;
             var destDirectory = _basePath + file.OrgPath;
             if (!Directory.Exists(destDirectory))
             {
@@ -113,6 +158,7 @@ namespace uPackageResolver
 
         private static IEnumerable<FileModel> GetFiles(string packageGuid)
         {
+            return new List<FileModel>();
             var manifest = XDocument.Load(Path.Combine(_basePath + _appDataFolder, packageGuid, @"package.xml"));
             var files = manifest.Root.Element("files").Elements("file");
             return files.Select(x => new FileModel()
@@ -125,7 +171,8 @@ namespace uPackageResolver
 
         private static IEnumerable<PackageModel> GetPackages()
         {
-            var config = XDocument.Load(Path.Combine( _basePath + _appDataFolder,@"packages\installed\installedPackages.config"));
+            return new List<PackageModel>() {new PackageModel() {PackageGuid = "packageGuid", RepoGuid = "repo Guid"}};
+            var config = XDocument.Load(Path.Combine(_basePath + _appDataFolder, @"packages\installed\installedPackages.config"));
             var packages = config.Elements("packages").Elements("package").Select(x => new PackageModel
             {
                 RepoGuid = x.Attribute("repositoryGuid").Value,
@@ -133,14 +180,6 @@ namespace uPackageResolver
             }).ToList();
 
             return packages.Where(x => !string.IsNullOrEmpty(x.PackageGuid) && !string.IsNullOrEmpty(x.RepoGuid));
-        }
-
-        private static async Task Post(HttpClient client, string url, HttpContent content)
-        {
-            Console.WriteLine("Send request to: " + url);
-            var response = await client.PostAsync(url, content);
-            Console.WriteLine("Response: " + response.StatusCode);
-            Console.WriteLine("***********");
         }
     }
 }
