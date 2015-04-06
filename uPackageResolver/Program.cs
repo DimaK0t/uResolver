@@ -25,7 +25,17 @@ namespace uPackageResolver
                 return;
             }
 
-            DownloadPackages(options.Host, options.UserName, options.Password);
+            try
+            {
+                DownloadPackages(options.Host, options.UserName, options.Password);
+            }
+            catch (Exception e)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine(e.InnerException);
+                Console.ForegroundColor = ConsoleColor.White;
+            }
+            
         }
 
         private static Args SetupArguments(string[] args)
