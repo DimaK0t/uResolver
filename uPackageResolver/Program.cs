@@ -25,10 +25,7 @@ namespace uPackageResolver
                 return;
             }
 
-            RestorePackages(options.Host, options.UserName, options.Password);
-            
-            while (true) ;
-
+            RestorePackages(options.Host, options.UserName, options.Password).Wait();
         }
 
         private static Args SetupArguments(string[] args)
@@ -79,7 +76,7 @@ namespace uPackageResolver
             return response;
         }
 
-        private static async void RestorePackages(string host, string userName, string password)
+        private static async Task RestorePackages(string host, string userName, string password)
         {
             try
             {
