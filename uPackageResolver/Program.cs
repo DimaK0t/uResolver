@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Net.Http;
 using System.Xml.Linq;
 using Fclp;
+using Fclp.Internals.Extensions;
 using uPackageResolver.Models;
 
 namespace uPackageResolver
@@ -19,7 +20,7 @@ namespace uPackageResolver
         private static void Main(string[] args)
         {
             var options = SetupArguments(args);
-            if (options == null)
+            if (options == null || options.Host.IsNullOrEmpty() || options.UserName.IsNullOrEmpty() || options.Password.IsNullOrEmpty())
             {
                 return;
             }
@@ -36,12 +37,12 @@ namespace uPackageResolver
             parser.Setup(x => x.Host).As('h').Required().WithDescription("Host name of your site. Requaired");
             parser.Setup(x => x.UserName).As('u').Required().WithDescription("Umbraco`s user name. Requaired");
             parser.Setup(x => x.Password).As('p').Required().WithDescription("Umraco`s password.  Requaired");
-            parser.SetupHelp("?").WithHeader("Example: uresolver -h site.com -u admin -p password").Callback(text => Console.WriteLine(text));
+            parser.SetupHelp("?", "help").UseForEmptyArgs().WithHeader("Example: uresolver -h site.com -u admin -p password").Callback(text => Console.WriteLine(text));
 
             var options = parser.Parse(args);
             if (options.HasErrors)
             {
-                parser.HelpOption.ShowHelp(parser.Options);
+                Console.WriteLine("Type \"-?\" or \"-help\" to get help");
                 return null;
             }
 
