@@ -24,9 +24,8 @@ namespace uPackageResolver
                 return;
             }
 
-
             RestorePackages(options.Host, options.UserName, options.Password);
-            //RestorePackages("", "", "");
+            
             while (true) ;
 
         }
@@ -36,7 +35,7 @@ namespace uPackageResolver
             var parser = new FluentCommandLineParser<Args>();
             parser.Setup(x => x.Host).As('h').Required().WithDescription("Host name of your site. Requaired");
             parser.Setup(x => x.UserName).As('u').Required().WithDescription("Umbraco`s user name. Requaired");
-            parser.Setup(x => x.UserName).As('p').Required().WithDescription("Umraco`s password.  Requaired");
+            parser.Setup(x => x.Password).As('p').Required().WithDescription("Umraco`s password.  Requaired");
             parser.SetupHelp("?").WithHeader("Example: uresolver -h site.com -u admin -p password").Callback(text => Console.WriteLine(text));
 
             var options = parser.Parse(args);
@@ -52,7 +51,6 @@ namespace uPackageResolver
 
         private static async Task<HttpResponseMessage> Login(string host, string userName, string password, HttpClient client)
         {
-            return new HttpResponseMessage( HttpStatusCode.OK);
             var authParams = new Dictionary<string, string>
                 {
                     {"password", password},
@@ -70,7 +68,6 @@ namespace uPackageResolver
 
         private static async Task<HttpResponseMessage> DownloadPackage(string host, PackageModel packageModel, HttpClient client)
         {
-            return new HttpResponseMessage(HttpStatusCode.OK);
             var packagePath = Path.Combine(_basePath + _appDataFolder, packageModel.PackageGuid);
             var packageParams = new Dictionary<string, string>
                     {
@@ -87,7 +84,6 @@ namespace uPackageResolver
             {
                 using (var client = new HttpClient())
                 {
-
                     if (!host.StartsWith("http://"))
                     {
                         host = "http://" + host;
@@ -98,7 +94,9 @@ namespace uPackageResolver
                     Console.WriteLine("Respons.StatusCode: " + loginResp.StatusCode);
                     Console.WriteLine("Loged in");
 
-                    foreach (var packageModel in GetPackages())
+                    var packages = GetPackages();
+                    Console.WriteLine("Found {0} packages ", packages.Count());
+                    foreach (var packageModel in packages)
                     {
                         // download package
                         var model = packageModel;
@@ -124,6 +122,7 @@ namespace uPackageResolver
                             }
                         });
                     }
+                    Console.WriteLine("All packages have beeen restored");
                 }
             }
             catch (Exception e)
@@ -142,7 +141,6 @@ namespace uPackageResolver
 
         private static void PlaceFileToPackageDirectory(string soursePath, FileModel file)
         {
-            return;
             var destDirectory = _basePath + file.OrgPath;
             if (!Directory.Exists(destDirectory))
             {
@@ -158,7 +156,6 @@ namespace uPackageResolver
 
         private static IEnumerable<FileModel> GetFiles(string packageGuid)
         {
-            return new List<FileModel>();
             var manifest = XDocument.Load(Path.Combine(_basePath + _appDataFolder, packageGuid, @"package.xml"));
             var files = manifest.Root.Element("files").Elements("file");
             return files.Select(x => new FileModel()
@@ -171,7 +168,6 @@ namespace uPackageResolver
 
         private static IEnumerable<PackageModel> GetPackages()
         {
-            return new List<PackageModel>() {new PackageModel() {PackageGuid = "packageGuid", RepoGuid = "repo Guid"}};
             var config = XDocument.Load(Path.Combine(_basePath + _appDataFolder, @"packages\installed\installedPackages.config"));
             var packages = config.Elements("packages").Elements("package").Select(x => new PackageModel
             {
