@@ -137,6 +137,7 @@ namespace uPackageResolver
             Console.WriteLine(exception.Message);
             Console.WriteLine(exception.InnerException);
             Console.ForegroundColor = ConsoleColor.White;
+            Environment.Exit(Environment.ExitCode);
         }
 
         private static void PlaceFileToPackageDirectory(string soursePath, FileModel file)
