@@ -8,12 +8,14 @@ using System.Net.Http;
 using System.Xml.Linq;
 using Fclp;
 using Fclp.Internals.Extensions;
+using uPackageResolver.Login;
 using uPackageResolver.Models;
 
 namespace uPackageResolver
 {
     internal class Program
     {
+        private static AuthManager _authManager = new AuthManager();
         private static readonly string _basePath = Environment.CurrentDirectory;
         private const string _appDataFolder = @"\App_Data\";
 
@@ -47,23 +49,6 @@ namespace uPackageResolver
             return result;
         }
 
-        private static async Task<HttpResponseMessage> Login(string host, string userName, string password, HttpClient client)
-        {
-            var authParams = new Dictionary<string, string>
-                {
-                    {"password", password},
-                    {"username", userName}
-                };
-
-            var authUrl = string.Format("{0}/umbraco/backoffice/UmbracoApi/Authentication/PostLogin", host);
-            var response = await client.PostAsync(authUrl, new FormUrlEncodedContent(authParams));
-            if (response.StatusCode.Equals(HttpStatusCode.BadRequest))
-            {
-                throw new HttpRequestException("Cannot login to Umbaco. Recheck credentials.");
-            }
-            return response;
-        }
-
         private static async Task<HttpResponseMessage> DownloadPackage(string host, PackageModel packageModel, HttpClient client)
         {
             var packagePath = Path.Combine(_basePath + _appDataFolder, packageModel.PackageGuid);
@@ -88,7 +73,7 @@ namespace uPackageResolver
                     }
 
                     Console.WriteLine("Trying to log in");
-                    var loginResp = await Login(host, userName, password, client);
+                    var loginResp = await _authManager.LoginAsync(host, userName, password, client);
                     Console.WriteLine("Respons.StatusCode: " + loginResp.StatusCode);
                     Console.WriteLine("Loged in");
 

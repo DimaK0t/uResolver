@@ -52,6 +52,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Args.cs" />
+    <Compile Include="Login\AuthManager.cs" />
     <Compile Include="Models\FileModel.cs" />
     <Compile Include="Models\PackageModel.cs" />
     <Compile Include="Program.cs" />
