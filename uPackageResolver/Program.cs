@@ -1,15 +1,11 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Threading.Tasks;
 using System.Net.Http;
-using System.Xml.Linq;
 using Fclp;
 using Fclp.Internals.Extensions;
 using uPackageResolver.Login;
-using uPackageResolver.Models;
 using uPackageResolver.Packages;
 
 namespace uPackageResolver
@@ -18,8 +14,8 @@ namespace uPackageResolver
     {
         private static readonly AuthManager _authManager = new AuthManager();
         private static readonly PackageManager _packageManager = new PackageManager();
-        private static readonly string _basePath = Environment.CurrentDirectory;
-        private const string _appDataFolder = @"\App_Data\";
+        private static string _basePath = Environment.CurrentDirectory;
+        private static string _appDataFolder = Environment.CurrentDirectory + @"\App_Data\";
 
         private static void Main(string[] args)
         {
@@ -30,7 +26,56 @@ namespace uPackageResolver
                 return;
             }
 
-            RestorePackages(options.Host, options.UserName, options.Password);
+            RestorePackages(options.Host, options.UserName, options.Password).ContinueWith(task =>
+            {
+                if (task.IsFaulted)
+                {
+                    HandleError(task.Exception);
+                }
+            }).Wait();
+        }
+
+        private static async Task RestorePackages(string host, string userName, string password)
+        {
+            using (var client = new HttpClient())
+            {
+                if (!host.StartsWith("http://"))
+                {
+                    host = "http://" + host;
+                }
+
+                Console.WriteLine("Trying to log in");
+                var loginResp = await _authManager.LoginAsync(host, userName, password, client);
+                Console.WriteLine("Respons.StatusCode: " + loginResp.StatusCode);
+                Console.WriteLine("Loged in");
+
+                var installedPackagesConfigPath = Path.Combine(_appDataFolder,
+                    @"packages\installed\installedPackages.config");
+                var packages = _packageManager.GetInstalledPackages(installedPackagesConfigPath).ToList();
+                Console.WriteLine("Found {0} packages ", packages.Count());
+                foreach (var packageModel in packages)
+                {
+                    // download package
+                    var model = packageModel;
+                    var packagePath = Path.Combine(_basePath + _appDataFolder, packageModel.PackageGuid);
+                    Console.WriteLine("Trying to download package " + model.PackageGuid);
+                    var downloadResul = await _packageManager.DownloadPackageAsync(packagePath, host, packageModel, client); ;
+                    Console.WriteLine("Respons.StatusCode: " + downloadResul.StatusCode);
+                    Console.WriteLine("Downloaded");
+
+                    // copy files to final destinations
+                    var manifestPath = Path.Combine(_appDataFolder, model.PackageGuid, @"package.xml");
+                    foreach (var file in _packageManager.GetPackageFiles(manifestPath))
+                    {
+                        var from = _basePath + file.OrgPath;
+                        var to = Path.Combine(_appDataFolder, model.PackageGuid,
+                            file.FileGuid);
+                        _packageManager.PlaceFileToPackageDirectory(from, to, file.OrgName);
+                    }
+                }
+
+                Console.WriteLine("All packages have beeen restored");
+            }
         }
 
         private static Args SetupArguments(string[] args)
@@ -55,85 +100,14 @@ namespace uPackageResolver
             return result;
         }
 
-        private static async Task<HttpResponseMessage> DownloadPackage(string host, PackageModel packageModel, HttpClient client)
-        {
-            var packagePath = Path.Combine(_basePath + _appDataFolder, packageModel.PackageGuid);
-            var packageParams = new Dictionary<string, string>
-            {
-                {"body_tempFile", packagePath},
-            };
-            var downloadPackageUrl = string.Format(
-                "{2}/umbraco/developer/packages/installer.aspx?repoGuid={0}&guid={1}", packageModel.RepoGuid,
-                packageModel.PackageGuid, host);
-            var response = await client.PostAsync(downloadPackageUrl, new FormUrlEncodedContent(packageParams));
-            return response;
-        }
-
-        private static async void RestorePackages(string host, string userName, string password)
-        {
-            try
-            {
-                using (var client = new HttpClient())
-                {
-                    if (!host.StartsWith("http://"))
-                    {
-                        host = "http://" + host;
-                    }
-
-                    Console.WriteLine("Trying to log in");
-                    var loginResp = await _authManager.LoginAsync(host, userName, password, client);
-                    Console.WriteLine("Respons.StatusCode: " + loginResp.StatusCode);
-                    Console.WriteLine("Loged in");
-
-                    var installedPackagesConfigPath = Path.Combine(_basePath + _appDataFolder,
-                        @"packages\installed\installedPackages.config");
-                    var packages = _packageManager.GetInstalledPackages(installedPackagesConfigPath);
-                    Console.WriteLine("Found {0} packages ", packages.Count());
-                    foreach (var packageModel in packages)
-                    {
-                        // download package
-                        var model = packageModel;
-                        await DownloadPackage(host, packageModel, client).ContinueWith(async (task) =>
-                        {
-                            try
-                            {
-                                Console.WriteLine("Trying to download package " + model.PackageGuid);
-                                var downloadResul = await task;
-                                Console.WriteLine("Respons.StatusCode: " + downloadResul.StatusCode);
-                                Console.WriteLine("Downloaded");
-
-                                // copy files to final destinations
-                                var manifestPath = Path.Combine(_basePath + _appDataFolder, model.PackageGuid,
-                                    @"package.xml");
-
-                                foreach (var file in _packageManager.GetPackageFiles(manifestPath))
-                                {
-                                    var from = _basePath + file.OrgPath;
-                                    var to = Path.Combine(_basePath + _appDataFolder, model.PackageGuid, file.FileGuid);
-                                    _packageManager.PlaceFileToPackageDirectory(from, to, file.OrgName);
-                                }
-                            }
-                            catch (Exception e)
-                            {
-                                HandleError(e);
-                            }
-                        });
-                    }
-                    Console.WriteLine("All packages have beeen restored");
-                }
-            }
-            catch (Exception e)
-            {
-                HandleError(e);
-            }
-        }
-
         private static void HandleError(Exception exception)
         {
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine(exception.Message);
             Console.WriteLine(exception.InnerException);
             Console.ForegroundColor = ConsoleColor.White;
+            
+            //quit on error
             Environment.Exit(Environment.ExitCode);
         }
     }

@@ -12,6 +12,19 @@ namespace uPackageResolver.Packages
 {
     public class PackageManager
     {
+        public async Task<HttpResponseMessage> DownloadPackageAsync(string packagePath, string host, PackageModel packageModel, HttpClient client)
+        {
+            var packageParams = new Dictionary<string, string>
+            {
+                {"body_tempFile", packagePath},
+            };
+            var downloadPackageUrl = string.Format(
+                "{2}/umbraco/developer/packages/installer.aspx?repoGuid={0}&guid={1}", packageModel.RepoGuid,
+                packageModel.PackageGuid, host);
+            var response = await client.PostAsync(downloadPackageUrl, new FormUrlEncodedContent(packageParams));
+            return response;
+        }
+
         public void PlaceFileToPackageDirectory(string from, string to, string fileName)
         {
             if (!Directory.Exists(from))
