@@ -14,19 +14,48 @@ namespace uPackageResolver
     {
         private static readonly AuthManager _authManager = new AuthManager();
         private static readonly PackageManager _packageManager = new PackageManager();
-        private static string _basePath = Environment.CurrentDirectory;
-        private static string _appDataFolder = Environment.CurrentDirectory + @"\App_Data\";
+        private static readonly FileSystemWatcher _watcher = new FileSystemWatcher();
+
+        private static string _basePath;
+        private static string _appDataFolder;
+        private static string _instaledPackagesConfig;
+        private static Args _options;
 
         private static void Main(string[] args)
         {
-            var options = SetupArguments(args);
-            if (options == null || options.Host.IsNullOrEmpty() || options.UserName.IsNullOrEmpty() ||
-                options.Password.IsNullOrEmpty())
+            // init enviroment variables
+            _basePath = Environment.CurrentDirectory;
+            _appDataFolder = _basePath + @"\App_Data\";
+            _instaledPackagesConfig = Path.Combine(_appDataFolder, @"packages\installed\installedPackages.config");
+
+            // init file watcher
+            _watcher.Path = Path.GetDirectoryName(_instaledPackagesConfig);
+            _watcher.NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size; ;
+            _watcher.Filter = "*.config";
+            _watcher. Changed += _watcher_Changed;
+            
+            // init options 
+            _options = SetupArguments(args);
+            if (_options == null || _options.Host.IsNullOrEmpty() || _options.UserName.IsNullOrEmpty() ||
+                _options.Password.IsNullOrEmpty())
             {
                 return;
             }
 
-            RestorePackages(options.Host, options.UserName, options.Password).ContinueWith(task =>
+            RestorePackages();
+
+            // begin wathing 
+            _watcher.EnableRaisingEvents = true;
+
+            while (true)
+            {
+                // do it for iternal watching for changes
+            }
+        }
+
+        private static void RestorePackages()
+        {
+            RestorePackagesAsync(_options.Host, _options.UserName, _options.Password).ContinueWith(task =>
             {
                 if (task.IsFaulted)
                 {
@@ -35,7 +64,22 @@ namespace uPackageResolver
             }).Wait();
         }
 
-        private static async Task RestorePackages(string host, string userName, string password)
+        private static void _watcher_Changed(object sender, FileSystemEventArgs e)
+        {
+            // here a small hack to get rid of twice firing event
+            try
+            {
+                _watcher.EnableRaisingEvents = false;
+                Console.WriteLine(e.FullPath + " was changed");
+                RestorePackages();
+            }
+            finally
+            {
+                _watcher.EnableRaisingEvents = true;
+            }
+        }
+
+        private static async Task RestorePackagesAsync(string host, string userName, string password)
         {
             using (var client = new HttpClient())
             {
@@ -49,15 +93,13 @@ namespace uPackageResolver
                 Console.WriteLine("Respons.StatusCode: " + loginResp.StatusCode);
                 Console.WriteLine("Loged in");
 
-                var installedPackagesConfigPath = Path.Combine(_appDataFolder,
-                    @"packages\installed\installedPackages.config");
-                var packages = _packageManager.GetInstalledPackages(installedPackagesConfigPath).ToList();
+                var packages = _packageManager.GetInstalledPackages(_instaledPackagesConfig).ToList();
                 Console.WriteLine("Found {0} packages ", packages.Count());
                 foreach (var packageModel in packages)
                 {
                     // download package
                     var model = packageModel;
-                    var packagePath = Path.Combine(_basePath + _appDataFolder, packageModel.PackageGuid);
+                    var packagePath = Path.Combine(_appDataFolder, packageModel.PackageGuid);
                     Console.WriteLine("Trying to download package " + model.PackageGuid);
                     var downloadResul = await _packageManager.DownloadPackageAsync(packagePath, host, packageModel, client); ;
                     Console.WriteLine("Respons.StatusCode: " + downloadResul.StatusCode);
@@ -75,6 +117,7 @@ namespace uPackageResolver
                 }
 
                 Console.WriteLine("All packages have beeen restored");
+                Console.WriteLine("Press Ctrl + C to exit ...");
             }
         }
 
