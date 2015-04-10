@@ -33,10 +33,6 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="ConfigMocker, Version=0.2.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\ConfigMocker.0.2\lib\ConfigMocker.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
     <Reference Include="FluentCommandLineParser, Version=1.4.1.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\FluentCommandLineParser.1.4.1\lib\net35\FluentCommandLineParser.dll</HintPath>
       <Private>True</Private>
